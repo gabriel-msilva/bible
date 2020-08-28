@@ -1,0 +1,300 @@
+---
+title: "Exemplo de análises em NLP"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r packages, message=FALSE, warning=FALSE}
+library(knitr)
+library(xml2)
+library(rvest)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(tidytext)
+library(ggplot2)
+library(ggraph)
+```
+
+# Data import
+
+Importa os textos da Bíblia em XML para um dataframe. Para condensar o exemplo, são usados apenas os quatro primeiros livros.
+
+```{r}
+url <- "https://raw.githubusercontent.com/thiagobodruk/biblia/master/xml/nvi.min.xml"
+
+books <- read_xml(url) %>% 
+  xml_children()
+
+books_names <- xml_attr(books, "name")
+
+old_testament <- books_names[1:which(books_names == "Malaquias")]
+
+read_chapter <- function(chapter, n) {
+  text <- chapter %>% 
+    xml_children() %>% 
+    xml_text()
+  
+  tibble(capitulo = n, versiculo = seq_along(text), text = text)
+}
+
+read_book <- function(book) {
+  book_name <- xml_attr(book, "name")
+  
+  chapters <- xml_children(book)
+  
+  imap_dfr(chapters, ~read_chapter(.x, .y)) %>% 
+    mutate(livro = book_name,
+           testamento = if_else(livro %in% old_testament,
+                                "Velho Testamento",
+                                "Novo Testamento")) %>% 
+    select(testamento, livro, everything())
+}
+
+bible <- books %>% 
+  map_dfr(read_book) %>% 
+  mutate(livro = factor(livro, levels = xml_attr(books, "name")))
+
+bible <- books %>% 
+  map_dfr(read_book) %>% 
+  mutate(testamento = factor(testamento, levels = c("Velho Testamento",
+                                                    "Novo Testamento")),
+         livro = factor(livro, levels = books_names))
+
+readr::write_csv(bible, "datasets/bible.csv")
+```
+
+Por brevidade, vamos utilizar somente os 4 primeiros livros da Bíblia.
+
+```{r}
+bible <- filter(bible, livro %in% books_names[1:4])
+
+# Print `bible` sample
+sample_n(bible, 10)
+```
+
+
+# Pré-processamento
+
+
+## Tokenização
+
+Separa o texto em palavras (*tokens*). São removidos caracteres especiais, como ponto final e vírgula, e para a língua portuguesa é interessante remover acentos e cedilhas.
+
+```{r}
+df <- bible %>% 
+  unnest_tokens(word, text) %>% 
+  mutate(word = stringi::stri_trans_general(word, "Latin-ASCII"))
+
+# Print `df` head
+head(df, 10)
+```
+
+## Stop-words
+
+Normalmente, as palavras mais comuns (frequentes) são artigos (o, umas), advérbios (muitas, pouco), conjunções (de, para), etc, que não adicionam valor à análise.
+
+```{r}
+df %>% 
+  group_by(livro) %>% 
+  count(word) %>%
+  top_n(10, n) %>%
+  ungroup() %>% 
+  arrange(livro, desc(n))
+```
+
+Por esse motivo, é útil remover esse conjunto de palavras, referidas como *stop-words* para analisarmos palavras mais interessantes.
+
+```{r}
+stop_words <- tibble(word = tm::stopwords(kind = "pt-BR")) %>% 
+  mutate(word = stringi::stri_trans_general(word, "Latin-ASCII"))
+
+df_clean <- df %>% 
+  anti_join(stop_words, by = "word")
+```
+
+# Análise
+
+## Word count
+
+Contagem de palavras mais frequentes.
+
+```{r}
+word_count <- df_clean %>% 
+  group_by(livro) %>% 
+  count(word) %>%
+  top_n(10, n) %>%
+  ungroup() %>% 
+  arrange(livro, n) %>% 
+  mutate(order = row_number())
+
+ggplot(word_count, aes(x = order, y = n)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~ livro, scales = "free_y") +
+  scale_x_continuous(breaks = word_count$order,
+                     labels = word_count$word) +
+  xlab(element_blank())
+```
+
+## Tf-Idf
+
+> A estatística **tf-idf** tem o objetivo de medir quão importante uma palavra é para um documento em um *coleção* de documentos (corpus).
+
+Nesse caso, um documento aqui é um livro da Bíblia e o corpus é o conjunto desses livros (a Bíblia). Tf-idf é obtido pela multiplicação de duas quantidades:
+
+* *term frequency*: a frequência com que uma palavra aparece em um documento;
+
+* *inverse document frequency*: é uma medida de quanta informação uma palavra fornece, ou seja, se o termo é comum ou raro em relação a todos os documentos.
+
+```{r}
+df_tfidf <- df %>% 
+  count(livro, word, sort = TRUE) %>% 
+  bind_tf_idf(word, livro, n)
+
+df_tfidf
+```
+
+```{r message=FALSE, warning=FALSE}
+df_tfidf %>%
+  group_by(livro) %>% 
+  top_n(10) %>% 
+  ungroup() %>%
+  arrange(livro, tf_idf) %>% 
+  mutate(order = row_number()) %>% 
+  ggplot(aes(order, tf_idf, fill = livro)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~livro, ncol = 2, scales = "free") +
+  coord_flip() +
+  scale_x_continuous(breaks = word_count$order,
+                     labels = word_count$word)
+```
+
+## Análise de sentimento
+
+A análise de sentimento (positivo, neutro ou negativo) pode ser feita através de um dicionário léxico (*lexicon*) de palavras, em que são dados valores ou classificações para cada palavra. Existem diversos dicionários, cujo eficácia pode variar com o tipo linguagem usada no contexto (mais formal, época da escrita, etc).
+
+```{r}
+lexicon <- lexiconPT::sentiLex_lem_PT02 %>% 
+  as_tibble() %>% 
+  select(word = term, grammar_category, value = polarity) %>% 
+  mutate(grammar_category = case_when(grammar_category == "N" ~ "noun",
+                                      grammar_category == "Adj" ~ "adjective",
+                                      grammar_category == "V" ~ "verb",
+                                      grammar_category == "IDIOM" ~ "idiom",
+                                      TRUE ~ grammar_category))
+
+lexicon
+```
+
+```{r}
+lexicon_stem <- lexicon %>% 
+  mutate(word = SnowballC::wordStem(word, language = "portuguese")) %>% 
+  distinct()
+
+lexicon_stem
+
+```
+
+No caso desse dicionário, poucas palavras foram encontradas (cerca de 2%). Pode ser útil aplicar normalização de palavras com técnicas como [stemming](https://en.wikipedia.org/wiki/Stemming) e [lemmatisation](https://en.wikipedia.org/wiki/Lemmatisation), que reduzem variações de uma palavra à sua raiz ou informação morfológica. A aplicação de  *word stemming* tanto para aos tokens como ao dicionário léxico aumenta as palavras encontradas para cerca de 30%, porém é necessário verificar se o sentido é preservado.
+
+```{r}
+df_clean %>% 
+  mutate(word = SnowballC::wordStem(word, language = "portuguese")) %>%
+  inner_join(lexicon_stem, by = "word") %>% 
+  group_by(livro, capitulo) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = capitulo, y = sentiment, fill = sentiment > 0)) +
+  geom_col() +
+  guides(fill = FALSE) +
+  facet_wrap(~ livro)
+```
+
+# N-grams
+
+Algumas vezes é interessante olhar para conjunto de palavras, ao invés de palavras individuais (*tokens*). Assim, pode-se analisar a relação entre palavras.
+
+```{r}
+bigrams <- bible %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  mutate(bigram = stringi::stri_trans_general(bigram, "Latin-ASCII"))
+
+bigrams %>% 
+  count(bigram, sort = TRUE)
+```
+
+```{r}
+bigrams_clean <- bigrams %>% 
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  filter(!word1 %in% stop_words$word) %>% 
+  filter(!word2 %in% stop_words$word)
+
+bigrams_clean %>% 
+  count(word1, word2, sort = TRUE)
+```
+
+```{r}
+bigrams_clean %>% 
+  unite(bigram, word1, word2, sep = " ") %>% 
+  count(livro, bigram) %>% 
+  bind_tf_idf(bigram, livro, n) %>% 
+  arrange(desc(tf_idf)) %>%
+  mutate(bigram = factor(bigram, levels = rev(unique(bigram)))) %>% 
+  group_by(livro) %>% 
+  top_n(10) %>% 
+  ungroup() %>%
+  ggplot(aes(bigram, tf_idf, fill = livro)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~livro, ncol = 2, scales = "free") +
+  coord_flip()
+```
+
+Em análise de sentimento, é fundamental olhar a relação entre palavras. Por exemplo, o sentimento da palavra "gostar" pode ser positivo, mas, se dissermos "**Não** gostei", o sentimento associado é contrário.
+
+```{r}
+bigrams %>% 
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  filter(word1 == "nao") %>% 
+  count(word2, sort = TRUE, .drop = FALSE)
+```
+
+
+## Rede de bigramas
+
+```{r}
+bigram_graph <- bigrams_clean %>% 
+  count(word1, word2, sort = TRUE) %>% 
+  filter(n > 15) %>% 
+  igraph::graph_from_data_frame()
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 3) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+
+# Matriz documento-termo
+
+A matriz documento-termo é comumente usada na construção de modelos, onde cada linha $i$ da matriz representa um documento e cada coluna $j$ (variável) representa uma palavra. Os valores da matriz podem ser indicar se a palavra $j$ está presente no documento $i$ (dummy variable) ou valores de tf-idf, por exemplo.
+
+```{r}
+dtm <- df %>% 
+  count(livro, word) %>% 
+  mutate(livro = as.character(livro)) %>% 
+  cast_dtm(livro, word, n, weighting = tm::weightTfIdf) %>%
+  as.matrix()
+
+dtm[, 1000:1005]
+```
+
+# Notas finais
+
+Análise textuais e processamento de linguagem natural são temas em constante evolução, com novas técnicas e projetos inovadores surgindo de tempos em tempos. Existem outros refinamentos que podem ser feitos no tratamento do texto, além de uma variedade de algoritmos mais avançados para aplicações diversas, como [Word2vec](https://en.wikipedia.org/wiki/Word2vec).

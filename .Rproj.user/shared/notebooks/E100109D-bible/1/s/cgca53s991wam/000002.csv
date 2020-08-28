@@ -1,0 +1,6 @@
+"0","df <- bible %>% "
+"0","  unnest_tokens(word, text) %>% "
+"0","  mutate(word = stringi::stri_trans_general(word, ""Latin-ASCII""))"
+"0",""
+"0","# Print `df` head"
+"0","head(df, 10)"

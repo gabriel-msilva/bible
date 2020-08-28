@@ -1,0 +1,5 @@
+"0","lexicon_stem <- lexicon %>% "
+"0","  mutate(word = SnowballC::wordStem(word, language = ""portuguese"")) %>% "
+"0","  distinct()"
+"0",""
+"0","lexicon_stem"

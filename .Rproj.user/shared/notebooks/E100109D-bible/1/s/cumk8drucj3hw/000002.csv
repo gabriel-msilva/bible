@@ -1,0 +1,5 @@
+"0","df_tfidf <- df %>% "
+"0","  count(livro, word, sort = TRUE) %>% "
+"0","  bind_tf_idf(word, livro, n)"
+"0",""
+"0","df_tfidf"

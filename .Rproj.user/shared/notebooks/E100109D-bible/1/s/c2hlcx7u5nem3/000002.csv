@@ -1,0 +1,12 @@
+"0","df_clean %>% "
+"0","  mutate(word = SnowballC::wordStem(word, language = ""portuguese"")) %>%"
+"0","  inner_join(lexicon_stem, by = ""word"") %>% "
+"0","  group_by(livro, capitulo) %>% "
+"0","  summarise(sentiment = sum(value)) %>% "
+"0","  ungroup() %>% "
+"0","  ggplot(aes(x = capitulo, y = sentiment, fill = sentiment > 0)) +"
+"0","  geom_col() +"
+"0","  guides(fill = FALSE) +"
+"0","  facet_wrap(~ livro)"
+"2","`summarise()` regrouping output by 'livro' (override with `.groups` argument)
+"

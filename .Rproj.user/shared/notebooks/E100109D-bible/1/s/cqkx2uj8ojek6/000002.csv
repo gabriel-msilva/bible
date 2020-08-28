@@ -1,0 +1,6 @@
+"0","bigrams <- bible %>% "
+"0","  unnest_tokens(bigram, text, token = ""ngrams"", n = 2) %>% "
+"0","  mutate(bigram = stringi::stri_trans_general(bigram, ""Latin-ASCII""))"
+"0",""
+"0","bigrams %>% "
+"0","  count(bigram, sort = TRUE)"

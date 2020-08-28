@@ -1,0 +1,7 @@
+"0","bigrams_clean <- bigrams %>% "
+"0","  separate(bigram, c(""word1"", ""word2""), sep = "" "") %>% "
+"0","  filter(!word1 %in% stop_words$word) %>% "
+"0","  filter(!word2 %in% stop_words$word)"
+"0",""
+"0","bigrams_clean %>% "
+"0","  count(word1, word2, sort = TRUE)"

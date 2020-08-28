@@ -1,0 +1,4 @@
+"0","bible <- filter(bible, livro %in% books_names[1:4])"
+"0",""
+"0","# Print `bible` sample"
+"0","sample_n(bible, 10)"

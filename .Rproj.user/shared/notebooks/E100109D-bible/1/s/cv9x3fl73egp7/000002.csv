@@ -1,0 +1,5 @@
+"0","stop_words <- tibble(word = tm::stopwords(kind = ""pt-BR"")) %>% "
+"0","  mutate(word = stringi::stri_trans_general(word, ""Latin-ASCII""))"
+"0",""
+"0","df_clean <- df %>% "
+"0","  anti_join(stop_words, by = ""word"")"

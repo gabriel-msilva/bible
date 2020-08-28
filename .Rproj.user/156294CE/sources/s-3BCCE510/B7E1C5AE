@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1598576880969.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3602381700",
+    "id" : "B7E1C5AE",
+    "lastKnownWriteTime" : 1598581656,
+    "last_content_update" : 1598581656826,
+    "path" : "~/Data Science/Projects/Bible/bible.Rmd",
+    "project_path" : "bible.Rmd",
+    "properties" : {
+        "cursorPosition" : "300,0",
+        "scrollLine" : "287"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}
